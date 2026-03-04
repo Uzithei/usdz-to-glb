@@ -2,7 +2,18 @@
   "name": "usdz-to-glb",
   "version": "0.1.0",
   "description": "Convert Apple USDZ files (USDA + USDC) to GLB (binary GLTF 2.0) — pure JavaScript, no native dependencies",
-  "keywords": ["usdz", "glb", "gltf", "usd", "usda", "usdc", "3d", "converter", "roomplan", "apple"],
+  "keywords": [
+    "usdz",
+    "glb",
+    "gltf",
+    "usd",
+    "usda",
+    "usdc",
+    "3d",
+    "converter",
+    "roomplan",
+    "apple"
+  ],
   "author": "energyi",
   "license": "MIT",
   "main": "dist/index.js",
@@ -21,6 +32,7 @@
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
+    "@gltf-transform/cli": "^4.3.0",
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
   },

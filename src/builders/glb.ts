@@ -19,7 +19,7 @@ const ARRAY_BUFFER      = 34962;
 const ELEMENT_ARRAY_BUFFER = 34963;
 
 // ─── Internal types ────────────────────────────────────────────────────────────
-interface BufView { byteOffset: number; byteLength: number; target?: number }
+interface BufView { buffer: number; byteOffset: number; byteLength: number; target?: number }
 interface Accessor {
   bufferView: number;
   byteOffset: number;
@@ -134,6 +134,21 @@ function applyTransform(positions: Float32Array, m: Mat4): void {
   }
 }
 
+function applyNormalTransform(normals: Float32Array, m: Mat4): void {
+  for (let i = 0; i < normals.length; i += 3) {
+    const x = normals[i], y = normals[i + 1], z = normals[i + 2];
+    const nx = m[0]*x + m[4]*y + m[8]*z;
+    const ny = m[1]*x + m[5]*y + m[9]*z;
+    const nz = m[2]*x + m[6]*y + m[10]*z;
+    const len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+    if (len > 1e-10) {
+      normals[i]     = nx / len;
+      normals[i + 1] = ny / len;
+      normals[i + 2] = nz / len;
+    }
+  }
+}
+
 function isIdentity(m: Mat4): boolean {
   const id = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
   return m.every((v, i) => Math.abs(v - id[i]) < 1e-6);
@@ -180,7 +195,7 @@ export function buildGlb(scene: UsdScene): Uint8Array {
     const padded = pad > 0 ? new Uint8Array(data.length + pad) : data;
     if (pad > 0) padded.set(data);
 
-    const bv: BufView = { byteOffset: binOffset, byteLength: data.length };
+    const bv: BufView = { buffer: 0, byteOffset: binOffset, byteLength: data.length };
     bufferViews.push(bv);
     binParts.push(padded);
     binOffset += padded.length;
@@ -196,11 +211,41 @@ export function buildGlb(scene: UsdScene): Uint8Array {
   }
 
   // ── Materials ─────────────────────────────────────────────────────────────
+
+  const SEMANTIC_COLORS: [RegExp, [number, number, number]][] = [
+    [/wall/i,       [0.85, 0.83, 0.80]],
+    [/floor/i,      [0.75, 0.70, 0.62]],
+    [/ceiling/i,    [0.92, 0.92, 0.92]],
+    [/window/i,     [0.55, 0.75, 0.95]],
+    [/door/i,       [0.60, 0.45, 0.30]],
+    [/chair/i,      [0.55, 0.38, 0.25]],
+    [/sofa|couch/i, [0.35, 0.50, 0.65]],
+    [/table/i,      [0.60, 0.48, 0.32]],
+    [/storage|shelf|cabinet/i, [0.62, 0.55, 0.47]],
+    [/television|tv|screen/i,  [0.20, 0.20, 0.22]],
+    [/bed/i,        [0.75, 0.65, 0.60]],
+    [/bathtub|shower|toilet/i, [0.88, 0.88, 0.92]],
+    [/stairs/i,     [0.72, 0.66, 0.58]],
+  ];
+
+  function resolveColor(mat: UsdMaterial): [number, number, number, number] {
+    const { x, y, z, w } = mat.baseColor;
+    // If the material is nearly white, apply a semantic color based on the name
+    if (x > 0.95 && y > 0.95 && z > 0.95) {
+      const label = mat.name + " " + mat.primPath;
+      for (const [pattern, color] of SEMANTIC_COLORS) {
+        if (pattern.test(label)) return [...color, w];
+      }
+    }
+    return [x, y, z, w];
+  }
+
   function addMaterial(mat: UsdMaterial): number {
     if (matIndexMap.has(mat.primPath)) return matIndexMap.get(mat.primPath)!;
 
+    const color = resolveColor(mat);
     const pbr: Record<string, unknown> = {
-      baseColorFactor: [mat.baseColor.x, mat.baseColor.y, mat.baseColor.z, mat.baseColor.w],
+      baseColorFactor: color,
       metallicFactor:  mat.metallic,
       roughnessFactor: mat.roughness,
     };
@@ -236,7 +281,7 @@ export function buildGlb(scene: UsdScene): Uint8Array {
     const padded = pad > 0 ? new Uint8Array(bytes.length + pad) : bytes;
     if (pad > 0) padded.set(bytes);
 
-    bufferViews.push({ byteOffset: binOffset, byteLength: bytes.length, target });
+    bufferViews.push({ buffer: 0, byteOffset: binOffset, byteLength: bytes.length, target });
     binParts.push(padded);
     binOffset += padded.length;
 
@@ -267,6 +312,7 @@ export function buildGlb(scene: UsdScene): Uint8Array {
 
     if (!isIdentity(mesh.transform)) {
       applyTransform(geo.positions, mesh.transform);
+      if (geo.normals) applyNormalTransform(geo.normals, mesh.transform);
     }
 
     const primitive: GltfPrimitive = { attributes: {} };
